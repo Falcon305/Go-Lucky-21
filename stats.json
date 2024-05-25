@@ -1,0 +1,11 @@
+{
+  "wins": 3,
+  "losses": 0,
+  "ties": 0,
+  "money_lost": 0,
+  "hands_played": 1,
+  "correct_counts": 0,
+  "incorrect_counts": 2,
+  "card_count_streak": 0,
+  "max_card_count_streak": 0
+}

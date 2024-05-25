@@ -2,198 +2,58 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
-	"os"
-	"os/exec"
-	"runtime"
-	"time"
 )
-
-type Suit string
-type Value string
-
-const (
-	Spades   Suit = "Spades"
-	Hearts   Suit = "Hearts"
-	Diamonds Suit = "Diamonds"
-	Clubs    Suit = "Clubs"
-)
-
-const (
-	Ace   Value = "Ace"
-	Two   Value = "2"
-	Three Value = "3"
-	Four  Value = "4"
-	Five  Value = "5"
-	Six   Value = "6"
-	Seven Value = "7"
-	Eight Value = "8"
-	Nine  Value = "9"
-	Ten   Value = "10"
-	Jack  Value = "Jack"
-	Queen Value = "Queen"
-	King  Value = "King"
-)
-
-type Card struct {
-	Suit  Suit
-	Value Value
-}
-
-type Deck []Card
-
-var (
-	reset   = "\033[0m"
-	red     = "\033[31m"
-	green   = "\033[32m"
-	yellow  = "\033[33m"
-	blue    = "\033[34m"
-	magenta = "\033[35m"
-	cyan    = "\033[36m"
-	white   = "\033[37m"
-)
-
-func NewDeck() Deck {
-	suits := []Suit{Spades, Hearts, Diamonds, Clubs}
-	values := []Value{Ace, Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King}
-	var deck Deck
-	for _, suit := range suits {
-		for _, value := range values {
-			deck = append(deck, Card{Suit: suit, Value: value})
-		}
-	}
-	return deck
-}
-
-func (d Deck) Shuffle() {
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(d), func(i, j int) {
-		d[i], d[j] = d[j], d[i]
-	})
-}
-
-func (d *Deck) Deal() Card {
-	card := (*d)[0]
-	*d = (*d)[1:]
-	return card
-}
-
-func CardValue(card Card) int {
-	switch card.Value {
-	case Ace:
-		return 11
-	case Two:
-		return 2
-	case Three:
-		return 3
-	case Four:
-		return 4
-	case Five:
-		return 5
-	case Six:
-		return 6
-	case Seven:
-		return 7
-	case Eight:
-		return 8
-	case Nine:
-		return 9
-	case Ten, Jack, Queen, King:
-		return 10
-	}
-	return 0
-}
-
-func HandValue(hand []Card) int {
-	value := 0
-	aces := 0
-	for _, card := range hand {
-		if card.Value == Ace {
-			aces++
-		}
-		value += CardValue(card)
-	}
-	for value > 21 && aces > 0 {
-		value -= 10
-		aces--
-	}
-	return value
-}
-
-var runningCount int
-
-func UpdateCount(card Card) {
-	switch card.Value {
-	case Two, Three, Four, Five, Six:
-		runningCount++
-	case Ten, Jack, Queen, King, Ace:
-		runningCount--
-	}
-}
-
-func clearScreen() {
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/c", "cls")
-	} else {
-		cmd = exec.Command("clear")
-	}
-	cmd.Stdout = os.Stdout
-	cmd.Run()
-}
-
-func printHand(label string, hand []Card) {
-	fmt.Printf("%s%s:%s ", cyan, label, reset)
-	for _, card := range hand {
-		fmt.Printf("%s%s of %s%s, ", magenta, card.Value, card.Suit, reset)
-	}
-	fmt.Println()
-}
 
 func main() {
+	stats, err := LoadStatistics()
+	if err != nil {
+		fmt.Printf("%sError loading statistics: %s%s\n", Red, err, Reset)
+	}
+
 	var mode string
-	clearScreen()
+	ClearScreen()
 	fmt.Println("Select Mode:")
 	fmt.Println("1. Game Mode")
 	fmt.Println("2. Practice Mode")
 	fmt.Scanln(&mode)
 
-	moneyLost := 0
-	wins, losses, ties := 0, 0, 0
-
 	for {
 		deck := NewDeck()
 		deck.Shuffle()
-		runningCount = 0
+		runningCount := 0
 
 		playerHand := []Card{deck.Deal(), deck.Deal()}
 		dealerHand := []Card{deck.Deal(), deck.Deal()}
 
 		for _, card := range playerHand {
-			UpdateCount(card)
+			UpdateCount(&runningCount, card)
 		}
 		for _, card := range dealerHand {
-			UpdateCount(card)
+			UpdateCount(&runningCount, card)
 		}
 
-		clearScreen()
-		printHand("Player Hand", playerHand)
-		fmt.Printf("Dealer Hand: %s%s%s Hidden\n", magenta, dealerHand[0], reset)
+		ClearScreen()
+		PrintHand("Player Hand", playerHand)
+		fmt.Printf("Dealer Hand: %s%s%s Hidden\n", Magenta, dealerHand[0], Reset)
 
 		playerTurn := true
 		for playerTurn {
-			fmt.Printf("Player Hand Value: %s%d%s\n", yellow, HandValue(playerHand), reset)
+			fmt.Printf("Player Hand Value: %s%d%s\n", Yellow, HandValue(playerHand), Reset)
+			if mode == "2" { // Practice mode
+				advice := BasicStrategyAdvice(playerHand, dealerHand)
+				fmt.Printf("%sBasic Strategy Advice: %s%s\n", Blue, advice, Reset)
+			}
 			var action string
 			fmt.Print("Do you want to (h)it or (s)tand? ")
 			fmt.Scanln(&action)
 			if action == "h" {
 				card := deck.Deal()
 				playerHand = append(playerHand, card)
-				UpdateCount(card)
+				UpdateCount(&runningCount, card)
 				if HandValue(playerHand) > 21 {
-					fmt.Printf("%sPlayer busts! Dealer wins.%s\n", red, reset)
-					losses++
-					moneyLost += 10
+					fmt.Printf("%sPlayer busts! Dealer wins.%s\n", Red, Reset)
+					stats.Losses++
+					stats.MoneyLost += 10 // Assume each game has a bet of $10
 					playerTurn = false
 				}
 			} else {
@@ -202,47 +62,58 @@ func main() {
 		}
 
 		if HandValue(playerHand) <= 21 {
-			clearScreen()
-			printHand("Player Hand", playerHand)
-			printHand("Dealer Hand", dealerHand)
+			ClearScreen()
+			PrintHand("Player Hand", playerHand)
+			PrintHand("Dealer Hand", dealerHand)
 
 			for HandValue(dealerHand) < 17 {
 				card := deck.Deal()
 				dealerHand = append(dealerHand, card)
-				UpdateCount(card)
+				UpdateCount(&runningCount, card)
 			}
 
 			playerValue := HandValue(playerHand)
 			dealerValue := HandValue(dealerHand)
-			fmt.Printf("Dealer Hand Value: %s%d%s\n", yellow, dealerValue, reset)
+			fmt.Printf("Dealer Hand Value: %s%d%s\n", Yellow, dealerValue, Reset)
 
 			if dealerValue > 21 || playerValue > dealerValue {
-				fmt.Printf("%sPlayer wins!%s\n", green, reset)
-				wins++
+				fmt.Printf("%sPlayer wins!%s\n", Green, Reset)
+				stats.Wins++
 			} else if playerValue == dealerValue {
-				fmt.Printf("%sPush!%s\n", blue, reset)
-				ties++
+				fmt.Printf("%sPush!%s\n", Blue, Reset)
+				stats.Ties++
 			} else {
-				fmt.Printf("%sDealer wins!%s\n", red, reset)
-				losses++
-				moneyLost += 10
+				fmt.Printf("%sDealer wins!%s\n", Red, Reset)
+				stats.Losses++
+				stats.MoneyLost += 10 // Assume each game has a bet of $10
 			}
 		}
 
-		if mode == "2" {
+		if mode == "2" { // Practice mode
 			var userCount int
 			fmt.Print("Enter your running count: ")
 			fmt.Scanln(&userCount)
 			if userCount == runningCount {
-				fmt.Printf("%sCorrect count!%s\n", green, reset)
+				fmt.Printf("%sCorrect count!%s\n", Green, Reset)
+				stats.CorrectCounts++
+				stats.CardCountStreak++
+				if stats.CardCountStreak > stats.MaxCardCountStreak {
+					stats.MaxCardCountStreak = stats.CardCountStreak
+				}
 			} else {
-				fmt.Printf("%sIncorrect count. Correct count is %d.%s\n", red, runningCount, reset)
+				fmt.Printf("%sIncorrect count. Correct count is %d.%s\n", Red, runningCount, Reset)
+				stats.IncorrectCounts++
+				stats.CardCountStreak = 0
 			}
 		}
 
-		fmt.Printf("Running Count: %s%d%s\n", yellow, runningCount, reset)
+		fmt.Printf("Running Count: %s%d%s\n", Yellow, runningCount, Reset)
 		fmt.Printf("Wins: %s%d%s, Losses: %s%d%s, Ties: %s%d%s, Money Lost: %s$%d%s\n",
-			green, wins, reset, red, losses, reset, blue, ties, reset, red, moneyLost, reset)
+			Green, stats.Wins, Reset, Red, stats.Losses, Reset, Blue, stats.Ties, Reset, Red, stats.MoneyLost, Reset)
+		fmt.Printf("Hands Played: %s%d%s, Correct Counts: %s%d%s, Incorrect Counts: %s%d%s\n",
+			Yellow, stats.HandsPlayed, Reset, Green, stats.CorrectCounts, Reset, Red, stats.IncorrectCounts, Reset)
+		fmt.Printf("Current Streak: %s%d%s, Max Streak: %s%d%s\n",
+			Cyan, stats.CardCountStreak, Reset, Magenta, stats.MaxCardCountStreak, Reset)
 
 		var again string
 		fmt.Print("Play again? (y/n): ")
@@ -250,5 +121,11 @@ func main() {
 		if again != "y" {
 			break
 		}
+		stats.HandsPlayed++
+	}
+
+	err = SaveStatistics(stats)
+	if err != nil {
+		fmt.Printf("%sError saving statistics: %s%s\n", Red, err, Reset)
 	}
 }
