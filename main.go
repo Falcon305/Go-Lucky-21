@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
+	"os/exec"
+	"runtime"
 	"time"
 )
 
@@ -38,6 +41,17 @@ type Card struct {
 }
 
 type Deck []Card
+
+var (
+	reset   = "\033[0m"
+	red     = "\033[31m"
+	green   = "\033[32m"
+	yellow  = "\033[33m"
+	blue    = "\033[34m"
+	magenta = "\033[35m"
+	cyan    = "\033[36m"
+	white   = "\033[37m"
+)
 
 func NewDeck() Deck {
 	suits := []Suit{Spades, Hearts, Diamonds, Clubs}
@@ -117,18 +131,44 @@ func UpdateCount(card Card) {
 	}
 }
 
-func main() {
-	deck := NewDeck()
-	deck.Shuffle()
-	runningCount = 0
+func clearScreen() {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", "cls")
+	} else {
+		cmd = exec.Command("clear")
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+}
 
+func printHand(label string, hand []Card) {
+	fmt.Printf("%s%s:%s ", cyan, label, reset)
+	for _, card := range hand {
+		fmt.Printf("%s%s of %s%s, ", magenta, card.Value, card.Suit, reset)
+	}
+	fmt.Println()
+}
+
+func main() {
+	var mode string
+	clearScreen()
+	fmt.Println("Select Mode:")
+	fmt.Println("1. Game Mode")
+	fmt.Println("2. Practice Mode")
+	fmt.Scanln(&mode)
+
+	moneyLost := 0
 	wins, losses, ties := 0, 0, 0
 
 	for {
+		deck := NewDeck()
+		deck.Shuffle()
+		runningCount = 0
+
 		playerHand := []Card{deck.Deal(), deck.Deal()}
 		dealerHand := []Card{deck.Deal(), deck.Deal()}
 
-		// Update running count
 		for _, card := range playerHand {
 			UpdateCount(card)
 		}
@@ -136,22 +176,24 @@ func main() {
 			UpdateCount(card)
 		}
 
-		fmt.Println("Player Hand:", playerHand)
-		fmt.Println("Dealer Hand:", dealerHand[0], "Hidden")
+		clearScreen()
+		printHand("Player Hand", playerHand)
+		fmt.Printf("Dealer Hand: %s%s%s Hidden\n", magenta, dealerHand[0], reset)
 
 		playerTurn := true
 		for playerTurn {
-			fmt.Println("Player Hand Value:", HandValue(playerHand))
+			fmt.Printf("Player Hand Value: %s%d%s\n", yellow, HandValue(playerHand), reset)
 			var action string
 			fmt.Print("Do you want to (h)it or (s)tand? ")
-			fmt.Scanf("%s", &action)
+			fmt.Scanln(&action)
 			if action == "h" {
 				card := deck.Deal()
 				playerHand = append(playerHand, card)
 				UpdateCount(card)
 				if HandValue(playerHand) > 21 {
-					fmt.Println("Player busts! Dealer wins.")
+					fmt.Printf("%sPlayer busts! Dealer wins.%s\n", red, reset)
 					losses++
+					moneyLost += 10
 					playerTurn = false
 				}
 			} else {
@@ -159,31 +201,52 @@ func main() {
 			}
 		}
 
-		fmt.Println("Dealer reveals second card:", dealerHand[1])
-		for HandValue(dealerHand) < 17 {
-			card := deck.Deal()
-			dealerHand = append(dealerHand, card)
-			UpdateCount(card)
-		}
-		playerValue := HandValue(playerHand)
-		dealerValue := HandValue(dealerHand)
-		fmt.Println("Dealer Hand Value:", dealerValue)
-		if playerValue <= 21 && (dealerValue > 21 || playerValue > dealerValue) {
-			fmt.Println("Player wins!")
-			wins++
-		} else if playerValue == dealerValue {
-			fmt.Println("Push!")
-			ties++
-		} else {
-			fmt.Println("Dealer wins!")
-			losses++
+		if HandValue(playerHand) <= 21 {
+			clearScreen()
+			printHand("Player Hand", playerHand)
+			printHand("Dealer Hand", dealerHand)
+
+			for HandValue(dealerHand) < 17 {
+				card := deck.Deal()
+				dealerHand = append(dealerHand, card)
+				UpdateCount(card)
+			}
+
+			playerValue := HandValue(playerHand)
+			dealerValue := HandValue(dealerHand)
+			fmt.Printf("Dealer Hand Value: %s%d%s\n", yellow, dealerValue, reset)
+
+			if dealerValue > 21 || playerValue > dealerValue {
+				fmt.Printf("%sPlayer wins!%s\n", green, reset)
+				wins++
+			} else if playerValue == dealerValue {
+				fmt.Printf("%sPush!%s\n", blue, reset)
+				ties++
+			} else {
+				fmt.Printf("%sDealer wins!%s\n", red, reset)
+				losses++
+				moneyLost += 10
+			}
 		}
 
-		fmt.Printf("Running Count: %d\n", runningCount)
-		fmt.Printf("Wins: %d, Losses: %d, Ties: %d\n", wins, losses, ties)
+		if mode == "2" {
+			var userCount int
+			fmt.Print("Enter your running count: ")
+			fmt.Scanln(&userCount)
+			if userCount == runningCount {
+				fmt.Printf("%sCorrect count!%s\n", green, reset)
+			} else {
+				fmt.Printf("%sIncorrect count. Correct count is %d.%s\n", red, runningCount, reset)
+			}
+		}
+
+		fmt.Printf("Running Count: %s%d%s\n", yellow, runningCount, reset)
+		fmt.Printf("Wins: %s%d%s, Losses: %s%d%s, Ties: %s%d%s, Money Lost: %s$%d%s\n",
+			green, wins, reset, red, losses, reset, blue, ties, reset, red, moneyLost, reset)
+
 		var again string
 		fmt.Print("Play again? (y/n): ")
-		fmt.Scanf("%s", &again)
+		fmt.Scanln(&again)
 		if again != "y" {
 			break
 		}
